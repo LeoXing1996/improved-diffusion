@@ -14,6 +14,7 @@ from improved_diffusion.script_util import (create_gaussian_diffusion,
 from improved_diffusion.train_util import TrainLoop
 from mmcv import Config, DictAction
 from mmcv.runner import get_dist_info, init_dist
+from pavi import SummaryWriter
 
 
 def parse_args():
@@ -144,11 +145,16 @@ def main():
     assert 'train_cfg' in cfg
     train_cfg_ = copy.deepcopy(cfg.train_cfg)
 
+    import ipdb
+    ipdb.set_trace()
     model = create_model(**model_cfg_)
     diffusion = create_gaussian_diffusion(**diffusion_cfg_)
     sampler = create_named_schedule_sampler(
         train_cfg_.get('schedule_sampler', 'uniform'), diffusion)
     train_cfg_['schedule_sampler'] = sampler
+    writer_cfg = cfg.writer
+    train_cfg_['mm_writer'] = SummaryWriter(**writer_cfg)
+    train_cfg_['save_dir'] = osp.join(cfg.work_dir, train_cfg_['save_dir'])
 
     data_cfg_ = copy.deepcopy(cfg.data)
 

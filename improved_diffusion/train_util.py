@@ -6,6 +6,7 @@ import blobfile as bf
 import numpy as np
 import torch as th
 import torch.distributed as dist
+from mmcv.runner import get_dist_info
 from torch.nn.parallel.distributed import DistributedDataParallel as DDP
 from torch.optim import AdamW
 
@@ -24,25 +25,26 @@ INITIAL_LOG_LOSS_SCALE = 20.0
 
 class TrainLoop:
 
-    def __init__(
-        self,
-        *,
-        model,
-        diffusion,
-        data,
-        batch_size,
-        microbatch,
-        lr,
-        ema_rate,
-        log_interval,
-        save_interval,
-        resume_checkpoint,
-        use_fp16=False,
-        fp16_scale_growth=1e-3,
-        schedule_sampler=None,
-        weight_decay=0.0,
-        lr_anneal_steps=0,
-    ):
+    def __init__(self,
+                 *,
+                 model,
+                 diffusion,
+                 data,
+                 batch_size,
+                 microbatch,
+                 lr,
+                 ema_rate,
+                 log_interval,
+                 save_interval,
+                 resume_checkpoint,
+                 use_fp16=False,
+                 fp16_scale_growth=1e-3,
+                 schedule_sampler=None,
+                 weight_decay=0.0,
+                 lr_anneal_steps=0,
+                 mm_logger=None,
+                 mm_writer=None,
+                 save_dir=None):
         self.model = model
         self.diffusion = diffusion
         self.data = iter(data)
@@ -69,6 +71,8 @@ class TrainLoop:
         self.lg_loss_scale = INITIAL_LOG_LOSS_SCALE
         self.sync_cuda = th.cuda.is_available()
 
+        self.save_dir = save_dir if save_dir is not None else get_blob_logdir()
+
         self._load_and_sync_parameters()
         if self.use_fp16:
             self._setup_fp16()
@@ -88,14 +92,12 @@ class TrainLoop:
                 for _ in range(len(self.ema_rate))
             ]
 
+        rank, world_size = get_dist_info()
         if th.cuda.is_available():
             self.use_ddp = True
             self.ddp_model = DDP(
-                self.model,
-                device_ids=[dist_util.dev()],
-                output_device=dist_util.dev(),
-                broadcast_buffers=False,
-                bucket_cap_mb=128,
+                self.model.cuda(),
+                device_ids=[th.cuda.current_device()],
                 find_unused_parameters=False,
             )
         else:
@@ -104,6 +106,8 @@ class TrainLoop:
                             'Gradients will not be synchronized properly!')
             self.use_ddp = False
             self.ddp_model = self.model
+        self.logger = mm_logger if mm_logger is not None else logger
+        self.writer = mm_writer
 
     def _load_and_sync_parameters(self):
         resume_checkpoint = find_resume_checkpoint() or self.resume_checkpoint
@@ -181,9 +185,14 @@ class TrainLoop:
     def forward_backward(self, batch, cond):
         zero_grad(self.model_params)
         for i in range(0, batch.shape[0], self.microbatch):
-            micro = batch[i:i + self.microbatch].to(dist_util.dev())
+            # micro = batch[i:i + self.microbatch].to(dist_util.dev())
+            # micro_cond = {
+            #     k: v[i:i + self.microbatch].to(dist_util.dev())
+            #     for k, v in cond.items()
+            # }
+            micro = batch[i:i + self.microbatch].cuda()
             micro_cond = {
-                k: v[i:i + self.microbatch].to(dist_util.dev())
+                k: v[i:i + self.microbatch].cuda()
                 for k, v in cond.items()
             }
             last_batch = (i + self.microbatch) >= batch.shape[0]
@@ -211,7 +220,11 @@ class TrainLoop:
             loss = (losses['loss'] * weights).mean()
             log_loss_dict(self.diffusion, t,
                           {k: v * weights
-                           for k, v in losses.items()})
+                           for k, v in losses.items()}, self.writer, self.step)
+            # if self.writer is not None and dist.get_rank() == 0:
+            #     import ipdb
+            #     ipdb.set_trace()
+            #     self.writer.add_scalars('loss', losses, iteration=self.step)
             if self.use_fp16:
                 loss_scale = 2**self.lg_loss_scale
                 (loss * loss_scale).backward()
@@ -274,8 +287,7 @@ class TrainLoop:
                 else:
                     filename = (f'ema_{rate}_'
                                 f'{(self.step+self.resume_step):06d}.pt')
-                with bf.BlobFile(bf.join(get_blob_logdir(), filename),
-                                 'wb') as f:
+                with bf.BlobFile(bf.join(self.save_dir, filename), 'wb') as f:
                     th.save(state_dict, f)
 
         save_checkpoint(0, self.master_params)
@@ -284,7 +296,7 @@ class TrainLoop:
 
         if dist.get_rank() == 0:
             with bf.BlobFile(
-                    bf.join(get_blob_logdir(),
+                    bf.join(self.save_dir,
                             f'opt{(self.step+self.resume_step):06d}.pt'),
                     'wb',
             ) as f:
@@ -345,7 +357,7 @@ def find_ema_checkpoint(main_checkpoint, step, rate):
     return None
 
 
-def log_loss_dict(diffusion, ts, losses):
+def log_loss_dict(diffusion, ts, losses, writer=None, step=None):
     for key, values in losses.items():
         logger.logkv_mean(key, values.mean().item())
         # Log the quantiles (four quartiles, in particular).
@@ -353,3 +365,6 @@ def log_loss_dict(diffusion, ts, losses):
                                    values.detach().cpu().numpy()):
             quartile = int(4 * sub_t / diffusion.num_timesteps)
             logger.logkv_mean(f'{key}_q{quartile}', sub_loss)
+            if writer is not None and dist.get_rank() == 0:
+                writer.add_scalar(
+                    f'loss/{key}_q_{quartile}', sub_loss, iteration=step)

@@ -2,6 +2,7 @@
 __pycache__/
 work_dirs/
 data/
+runs/
 
 *.vscode
 *.vim
