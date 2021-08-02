@@ -18,7 +18,7 @@ from pavi import SummaryWriter
 
 
 def parse_args():
-    parser = argparse.ArgumentParser(description='Train a GAN model')
+    parser = argparse.ArgumentParser(description='Train a DDPM model')
     parser.add_argument('config', help='train config file path')
     parser.add_argument('--work-dir', help='the dir to save logs and models')
     parser.add_argument(
@@ -156,8 +156,6 @@ def main():
 
     data_cfg_ = copy.deepcopy(cfg.data)
 
-    import ipdb
-    ipdb.set_trace()
     if hasattr(data_cfg_, 'type') and data_cfg_.type == 'RepeatDataset':
         from improved_diffusion.image_datasets import RepeatDataset
         times = data_cfg_.times

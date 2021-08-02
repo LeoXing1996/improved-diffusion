@@ -22,6 +22,7 @@ data = dict(
 )
 
 model_and_diffusion = dict(
+    num_classes=1000,
     learn_sigma=True,
     model=dict(
         image_size=64,

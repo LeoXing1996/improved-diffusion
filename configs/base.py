@@ -14,6 +14,8 @@ train_cfg = dict(
     log_interval=10,
     save_interval=10000)
 
+test_cfg = dict(clip_noise=True)
+
 model_and_diffusion = dict(
     learn_sigma=False,
     model=dict(
