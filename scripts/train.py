@@ -145,8 +145,6 @@ def main():
     assert 'train_cfg' in cfg
     train_cfg_ = copy.deepcopy(cfg.train_cfg)
 
-    import ipdb
-    ipdb.set_trace()
     model = create_model(**model_cfg_)
     diffusion = create_gaussian_diffusion(**diffusion_cfg_)
     sampler = create_named_schedule_sampler(
@@ -158,12 +156,16 @@ def main():
 
     data_cfg_ = copy.deepcopy(cfg.data)
 
-    if data_cfg_.type == 'RepeatDataset':
+    import ipdb
+    ipdb.set_trace()
+    if hasattr(data_cfg_, 'type') and data_cfg_.type == 'RepeatDataset':
         from improved_diffusion.image_datasets import RepeatDataset
         times = data_cfg_.times
         dataset = RepeatDataset(
             build_dataset(**data_cfg_.dataset, launcher=args.launcher),
             times=times)
+    else:
+        dataset = build_dataset(**data_cfg_, launcher=args.launcher)
 
     dataloader = build_dataloader(
         dataset,

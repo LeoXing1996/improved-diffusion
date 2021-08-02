@@ -1,6 +1,5 @@
-from abc import abstractmethod
-
 import math
+from abc import abstractmethod
 
 import numpy as np
 import torch as th
@@ -8,35 +7,22 @@ import torch.nn as nn
 import torch.nn.functional as F
 
 from .fp16_util import convert_module_to_f16, convert_module_to_f32
-from .nn import (
-    SiLU,
-    conv_nd,
-    linear,
-    avg_pool_nd,
-    zero_module,
-    normalization,
-    timestep_embedding,
-    checkpoint,
-)
+from .nn import (SiLU, avg_pool_nd, checkpoint, conv_nd, linear, normalization,
+                 timestep_embedding, zero_module)
 
 
 class TimestepBlock(nn.Module):
-    """
-    Any module where forward() takes timestep embeddings as a second argument.
-    """
+    """Any module where forward() takes timestep embeddings as a second
+    argument."""
 
     @abstractmethod
     def forward(self, x, emb):
-        """
-        Apply the module to `x` given `emb` timestep embeddings.
-        """
+        """Apply the module to `x` given `emb` timestep embeddings."""
 
 
 class TimestepEmbedSequential(nn.Sequential, TimestepBlock):
-    """
-    A sequential module that passes timestep embeddings to the children that
-    support it as an extra input.
-    """
+    """A sequential module that passes timestep embeddings to the children that
+    support it as an extra input."""
 
     def forward(self, x, emb):
         for layer in self:
@@ -48,8 +34,7 @@ class TimestepEmbedSequential(nn.Sequential, TimestepBlock):
 
 
 class Upsample(nn.Module):
-    """
-    An upsampling layer with an optional convolution.
+    """An upsampling layer with an optional convolution.
 
     :param channels: channels in the inputs and outputs.
     :param use_conv: a bool determining if a convolution is applied.
@@ -69,18 +54,17 @@ class Upsample(nn.Module):
         assert x.shape[1] == self.channels
         if self.dims == 3:
             x = F.interpolate(
-                x, (x.shape[2], x.shape[3] * 2, x.shape[4] * 2), mode="nearest"
-            )
+                x, (x.shape[2], x.shape[3] * 2, x.shape[4] * 2),
+                mode='nearest')
         else:
-            x = F.interpolate(x, scale_factor=2, mode="nearest")
+            x = F.interpolate(x, scale_factor=2, mode='nearest')
         if self.use_conv:
             x = self.conv(x)
         return x
 
 
 class Downsample(nn.Module):
-    """
-    A downsampling layer with an optional convolution.
+    """A downsampling layer with an optional convolution.
 
     :param channels: channels in the inputs and outputs.
     :param use_conv: a bool determining if a convolution is applied.
@@ -95,7 +79,8 @@ class Downsample(nn.Module):
         self.dims = dims
         stride = 2 if dims != 3 else (1, 2, 2)
         if use_conv:
-            self.op = conv_nd(dims, channels, channels, 3, stride=stride, padding=1)
+            self.op = conv_nd(
+                dims, channels, channels, 3, stride=stride, padding=1)
         else:
             self.op = avg_pool_nd(stride)
 
@@ -105,8 +90,7 @@ class Downsample(nn.Module):
 
 
 class ResBlock(TimestepBlock):
-    """
-    A residual block that can optionally change the number of channels.
+    """A residual block that can optionally change the number of channels.
 
     :param channels: the number of input channels.
     :param emb_channels: the number of timestep embedding channels.
@@ -148,7 +132,8 @@ class ResBlock(TimestepBlock):
             SiLU(),
             linear(
                 emb_channels,
-                2 * self.out_channels if use_scale_shift_norm else self.out_channels,
+                2 * self.out_channels
+                if use_scale_shift_norm else self.out_channels,
             ),
         )
         self.out_layers = nn.Sequential(
@@ -156,30 +141,28 @@ class ResBlock(TimestepBlock):
             SiLU(),
             nn.Dropout(p=dropout),
             zero_module(
-                conv_nd(dims, self.out_channels, self.out_channels, 3, padding=1)
-            ),
+                conv_nd(
+                    dims, self.out_channels, self.out_channels, 3, padding=1)),
         )
 
         if self.out_channels == channels:
             self.skip_connection = nn.Identity()
         elif use_conv:
             self.skip_connection = conv_nd(
-                dims, channels, self.out_channels, 3, padding=1
-            )
+                dims, channels, self.out_channels, 3, padding=1)
         else:
-            self.skip_connection = conv_nd(dims, channels, self.out_channels, 1)
+            self.skip_connection = conv_nd(dims, channels, self.out_channels,
+                                           1)
 
     def forward(self, x, emb):
-        """
-        Apply the block to a Tensor, conditioned on a timestep embedding.
+        """Apply the block to a Tensor, conditioned on a timestep embedding.
 
         :param x: an [N x C x ...] Tensor of features.
         :param emb: an [N x emb_channels] Tensor of timestep embeddings.
         :return: an [N x C x ...] Tensor of outputs.
         """
-        return checkpoint(
-            self._forward, (x, emb), self.parameters(), self.use_checkpoint
-        )
+        return checkpoint(self._forward, (x, emb), self.parameters(),
+                          self.use_checkpoint)
 
     def _forward(self, x, emb):
         h = self.in_layers(x)
@@ -198,8 +181,8 @@ class ResBlock(TimestepBlock):
 
 
 class AttentionBlock(nn.Module):
-    """
-    An attention block that allows spatial positions to attend to each other.
+    """An attention block that allows spatial positions to attend to each
+    other.
 
     Originally ported from here, but adapted to the N-d case.
     https://github.com/hojonathanho/diffusion/blob/1e0dceb3b3495bbe19116a5e1b3596cd0706c543/diffusion_tf/models/unet.py#L66.
@@ -217,7 +200,8 @@ class AttentionBlock(nn.Module):
         self.proj_out = zero_module(conv_nd(1, channels, channels, 1))
 
     def forward(self, x):
-        return checkpoint(self._forward, (x,), self.parameters(), self.use_checkpoint)
+        return checkpoint(self._forward, (x, ), self.parameters(),
+                          self.use_checkpoint)
 
     def _forward(self, x):
         b, c, *spatial = x.shape
@@ -231,13 +215,10 @@ class AttentionBlock(nn.Module):
 
 
 class QKVAttention(nn.Module):
-    """
-    A module which performs QKV attention.
-    """
+    """A module which performs QKV attention."""
 
     def forward(self, qkv):
-        """
-        Apply QKV attention.
+        """Apply QKV attention.
 
         :param qkv: an [N x (C * 3) x T] tensor of Qs, Ks, and Vs.
         :return: an [N x C x T] tensor after attention.
@@ -246,15 +227,14 @@ class QKVAttention(nn.Module):
         q, k, v = th.split(qkv, ch, dim=1)
         scale = 1 / math.sqrt(math.sqrt(ch))
         weight = th.einsum(
-            "bct,bcs->bts", q * scale, k * scale
-        )  # More stable with f16 than dividing afterwards
+            'bct,bcs->bts', q * scale,
+            k * scale)  # More stable with f16 than dividing afterwards
         weight = th.softmax(weight.float(), dim=-1).type(weight.dtype)
-        return th.einsum("bts,bcs->bct", weight, v)
+        return th.einsum('bts,bcs->bct', weight, v)
 
     @staticmethod
     def count_flops(model, _x, y):
-        """
-        A counter for the `thop` package to count the operations in an
+        """A counter for the `thop` package to count the operations in an
         attention operation.
 
         Meant to be used like:
@@ -264,20 +244,18 @@ class QKVAttention(nn.Module):
                 inputs=(inputs, timestamps),
                 custom_ops={QKVAttention: QKVAttention.count_flops},
             )
-
         """
         b, c, *spatial = y[0].shape
         num_spatial = int(np.prod(spatial))
         # We perform two matmuls with the same number of ops.
         # The first computes the weight matrix, the second computes
         # the combination of the value vectors.
-        matmul_ops = 2 * b * (num_spatial ** 2) * c
+        matmul_ops = 2 * b * (num_spatial**2) * c
         model.total_ops += th.DoubleTensor([matmul_ops])
 
 
 class UNetModel(nn.Module):
-    """
-    The full UNet model with attention and timestep embedding.
+    """The full UNet model with attention and timestep embedding.
 
     :param in_channels: channels in the input Tensor.
     :param model_channels: base channel count for the model.
@@ -343,13 +321,10 @@ class UNetModel(nn.Module):
         if self.num_classes is not None:
             self.label_emb = nn.Embedding(num_classes, time_embed_dim)
 
-        self.input_blocks = nn.ModuleList(
-            [
-                TimestepEmbedSequential(
-                    conv_nd(dims, in_channels, model_channels, 3, padding=1)
-                )
-            ]
-        )
+        self.input_blocks = nn.ModuleList([
+            TimestepEmbedSequential(
+                conv_nd(dims, in_channels, model_channels, 3, padding=1))
+        ])
         input_block_chans = [model_channels]
         ch = model_channels
         ds = 1
@@ -370,15 +345,15 @@ class UNetModel(nn.Module):
                 if ds in attention_resolutions:
                     layers.append(
                         AttentionBlock(
-                            ch, use_checkpoint=use_checkpoint, num_heads=num_heads
-                        )
-                    )
+                            ch,
+                            use_checkpoint=use_checkpoint,
+                            num_heads=num_heads))
                 self.input_blocks.append(TimestepEmbedSequential(*layers))
                 input_block_chans.append(ch)
             if level != len(channel_mult) - 1:
                 self.input_blocks.append(
-                    TimestepEmbedSequential(Downsample(ch, conv_resample, dims=dims))
-                )
+                    TimestepEmbedSequential(
+                        Downsample(ch, conv_resample, dims=dims)))
                 input_block_chans.append(ch)
                 ds *= 2
 
@@ -391,7 +366,8 @@ class UNetModel(nn.Module):
                 use_checkpoint=use_checkpoint,
                 use_scale_shift_norm=use_scale_shift_norm,
             ),
-            AttentionBlock(ch, use_checkpoint=use_checkpoint, num_heads=num_heads),
+            AttentionBlock(
+                ch, use_checkpoint=use_checkpoint, num_heads=num_heads),
             ResBlock(
                 ch,
                 time_embed_dim,
@@ -423,8 +399,7 @@ class UNetModel(nn.Module):
                             ch,
                             use_checkpoint=use_checkpoint,
                             num_heads=num_heads_upsample,
-                        )
-                    )
+                        ))
                 if level and i == num_res_blocks:
                     layers.append(Upsample(ch, conv_resample, dims=dims))
                     ds //= 2
@@ -433,35 +408,29 @@ class UNetModel(nn.Module):
         self.out = nn.Sequential(
             normalization(ch),
             SiLU(),
-            zero_module(conv_nd(dims, model_channels, out_channels, 3, padding=1)),
+            zero_module(
+                conv_nd(dims, model_channels, out_channels, 3, padding=1)),
         )
 
     def convert_to_fp16(self):
-        """
-        Convert the torso of the model to float16.
-        """
+        """Convert the torso of the model to float16."""
         self.input_blocks.apply(convert_module_to_f16)
         self.middle_block.apply(convert_module_to_f16)
         self.output_blocks.apply(convert_module_to_f16)
 
     def convert_to_fp32(self):
-        """
-        Convert the torso of the model to float32.
-        """
+        """Convert the torso of the model to float32."""
         self.input_blocks.apply(convert_module_to_f32)
         self.middle_block.apply(convert_module_to_f32)
         self.output_blocks.apply(convert_module_to_f32)
 
     @property
     def inner_dtype(self):
-        """
-        Get the dtype used by the torso of the model.
-        """
+        """Get the dtype used by the torso of the model."""
         return next(self.input_blocks.parameters()).dtype
 
     def forward(self, x, timesteps, y=None):
-        """
-        Apply the model to an input batch.
+        """Apply the model to an input batch.
 
         :param x: an [N x C x ...] Tensor of inputs.
         :param timesteps: a 1-D batch of timesteps.
@@ -470,13 +439,14 @@ class UNetModel(nn.Module):
         """
         assert (y is not None) == (
             self.num_classes is not None
-        ), "must specify y if and only if the model is class-conditional"
+        ), 'must specify y if and only if the model is class-conditional'
 
         hs = []
-        emb = self.time_embed(timestep_embedding(timesteps, self.model_channels))
+        emb = self.time_embed(
+            timestep_embedding(timesteps, self.model_channels))
 
         if self.num_classes is not None:
-            assert y.shape == (x.shape[0],)
+            assert y.shape == (x.shape[0], )
             emb = emb + self.label_emb(y)
 
         h = x.type(self.inner_dtype)
@@ -491,8 +461,7 @@ class UNetModel(nn.Module):
         return self.out(h)
 
     def get_feature_vectors(self, x, timesteps, y=None):
-        """
-        Apply the model and return all of the intermediate tensors.
+        """Apply the model and return all of the intermediate tensors.
 
         :param x: an [N x C x ...] Tensor of inputs.
         :param timesteps: a 1-D batch of timesteps.
@@ -504,28 +473,28 @@ class UNetModel(nn.Module):
                  - 'up': a list of hidden state tensors from upsampling.
         """
         hs = []
-        emb = self.time_embed(timestep_embedding(timesteps, self.model_channels))
+        emb = self.time_embed(
+            timestep_embedding(timesteps, self.model_channels))
         if self.num_classes is not None:
-            assert y.shape == (x.shape[0],)
+            assert y.shape == (x.shape[0], )
             emb = emb + self.label_emb(y)
         result = dict(down=[], up=[])
         h = x.type(self.inner_dtype)
         for module in self.input_blocks:
             h = module(h, emb)
             hs.append(h)
-            result["down"].append(h.type(x.dtype))
+            result['down'].append(h.type(x.dtype))
         h = self.middle_block(h, emb)
-        result["middle"] = h.type(x.dtype)
+        result['middle'] = h.type(x.dtype)
         for module in self.output_blocks:
             cat_in = th.cat([h, hs.pop()], dim=1)
             h = module(cat_in, emb)
-            result["up"].append(h.type(x.dtype))
+            result['up'].append(h.type(x.dtype))
         return result
 
 
 class SuperResModel(UNetModel):
-    """
-    A UNetModel that performs super-resolution.
+    """A UNetModel that performs super-resolution.
 
     Expects an extra kwarg `low_res` to condition on a low-resolution image.
     """
@@ -535,13 +504,14 @@ class SuperResModel(UNetModel):
 
     def forward(self, x, timesteps, low_res=None, **kwargs):
         _, _, new_height, new_width = x.shape
-        upsampled = F.interpolate(low_res, (new_height, new_width), mode="bilinear")
+        upsampled = F.interpolate(
+            low_res, (new_height, new_width), mode='bilinear')
         x = th.cat([x, upsampled], dim=1)
         return super().forward(x, timesteps, **kwargs)
 
     def get_feature_vectors(self, x, timesteps, low_res=None, **kwargs):
         _, new_height, new_width, _ = x.shape
-        upsampled = F.interpolate(low_res, (new_height, new_width), mode="bilinear")
+        upsampled = F.interpolate(
+            low_res, (new_height, new_width), mode='bilinear')
         x = th.cat([x, upsampled], dim=1)
         return super().get_feature_vectors(x, timesteps, **kwargs)
-

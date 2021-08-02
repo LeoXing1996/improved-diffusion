@@ -162,7 +162,10 @@ def build_dataset(data_dir,
                   image_size,
                   class_cond=False,
                   launcher=None,
-                  memcache_args=None):
+                  memcache_args=None,
+                  **kwargs):
+    import ipdb
+    ipdb.set_trace()
     if not data_dir:
         raise ValueError('unspecified data directory')
     all_files = _list_image_files_recursively(data_dir)
@@ -252,6 +255,7 @@ class ImageDataset(Dataset):
             tuple(round(x * scale) for x in pil_image.size),
             resample=Image.BICUBIC)
 
+        # seems center crop here
         arr = np.array(pil_image.convert('RGB'))
         crop_y = (arr.shape[0] - self.resolution) // 2
         crop_x = (arr.shape[1] - self.resolution) // 2
