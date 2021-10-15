@@ -73,7 +73,7 @@ class TrainLoop:
 
         self.save_dir = save_dir if save_dir is not None else get_blob_logdir()
 
-        self._load_and_sync_parameters()
+        # self._load_and_sync_parameters()
         if self.use_fp16:
             self._setup_fp16()
 
@@ -185,19 +185,13 @@ class TrainLoop:
     def forward_backward(self, batch, cond):
         zero_grad(self.model_params)
         for i in range(0, batch.shape[0], self.microbatch):
-            # micro = batch[i:i + self.microbatch].to(dist_util.dev())
-            # micro_cond = {
-            #     k: v[i:i + self.microbatch].to(dist_util.dev())
-            #     for k, v in cond.items()
-            # }
             micro = batch[i:i + self.microbatch].cuda()
             micro_cond = {
                 k: v[i:i + self.microbatch].cuda()
                 for k, v in cond.items()
             }
             last_batch = (i + self.microbatch) >= batch.shape[0]
-            t, weights = self.schedule_sampler.sample(micro.shape[0],
-                                                      dist_util.dev())
+            t, weights = self.schedule_sampler.sample(micro.shape[0])
 
             compute_losses = functools.partial(
                 self.diffusion.training_losses,
@@ -221,10 +215,6 @@ class TrainLoop:
             log_loss_dict(self.diffusion, t,
                           {k: v * weights
                            for k, v in losses.items()}, self.writer, self.step)
-            # if self.writer is not None and dist.get_rank() == 0:
-            #     import ipdb
-            #     ipdb.set_trace()
-            #     self.writer.add_scalars('loss', losses, iteration=self.step)
             if self.use_fp16:
                 loss_scale = 2**self.lg_loss_scale
                 (loss * loss_scale).backward()
@@ -366,5 +356,9 @@ def log_loss_dict(diffusion, ts, losses, writer=None, step=None):
             quartile = int(4 * sub_t / diffusion.num_timesteps)
             logger.logkv_mean(f'{key}_q{quartile}', sub_loss)
             if writer is not None and dist.get_rank() == 0:
-                writer.add_scalar(
-                    f'loss/{key}_q_{quartile}', sub_loss, iteration=step)
+                try:
+                    writer.add_scalar(
+                        f'loss/{key}_q_{quartile}', sub_loss, iteration=step)
+                except TypeError:
+                    writer.add_scalar(
+                        f'loss/{key}_q_{quartile}', sub_loss, global_step=step)

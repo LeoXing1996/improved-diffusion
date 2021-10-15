@@ -36,7 +36,7 @@ def parse_args():
         action='store_true',
         help='whether to set deterministic options for CUDNN backend.')
     parser.add_argument(
-        '--batch-size', type=int, default=10, help='batch size of dataloader')
+        '--batch-size', type=int, default=100, help='batch size of dataloader')
     parser.add_argument(
         '--samples-path',
         type=str,
@@ -99,6 +99,7 @@ def main():
         cfg.work_dir = osp.join('./work_dirs',
                                 osp.splitext(osp.basename(args.config))[0],
                                 'sample')
+    os.makedirs(cfg.work_dir, exist_ok=True)
 
     if args.num_samples == -1:
         args.num_samples = 50000
@@ -159,7 +160,7 @@ def main():
     all_labels = []
 
     # TODO: use hard code instead config here -->
-    #   shoule convert args.num_samples to config
+    #   should convert args.num_samples to config
     #   or use metric num_samples instead
     if rank == 0:
         pbar = mmcv.ProgressBar(args.num_samples)
@@ -207,27 +208,30 @@ def main():
 
         if rank == 0:
             pbar.update(args.batch_size)
-            logger.info(f'created {len(all_images) * args.batch_size} samples',
-                        'MMGEN')
+            logger.info(f'created {len(all_images) * args.batch_size} samples')
 
     arr = np.concatenate(all_images, axis=0)
     arr = arr[:args.num_samples]
-    if args.class_cond:
-        label_arr = np.concatenate(all_labels, axis=0)
-        label_arr = label_arr[:args.num_samples]
+
+    if num_classes > 0:
+        if len(all_labels) != 1:
+            label_arr = np.concatenate(all_labels, axis=0)
+            label_arr = label_arr[:args.num_samples]
+        else:
+            label_arr = all_labels[0]
 
     if rank == 0:
         shape_str = 'x'.join([str(x) for x in arr.shape])
-        out_path = os.path.join(args.work_dirs, f'samples_{shape_str}.npz')
+        out_path = os.path.join(cfg.work_dir, f'samples_{shape_str}.npz')
         logger.info(f'saving to {out_path}')
-        if args.class_cond:
+        if num_classes > 0:
             np.savez(out_path, arr, label_arr)
         else:
             np.savez(out_path, arr)
 
     if distributed:
         dist.barrier()
-    logger.info('sampling complete', 'MMGEN')
+    logger.info('sampling complete')
 
 
 if __name__ == '__main__':

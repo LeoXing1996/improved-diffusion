@@ -164,8 +164,6 @@ def build_dataset(data_dir,
                   launcher=None,
                   memcache_args=None,
                   **kwargs):
-    import ipdb
-    ipdb.set_trace()
     if not data_dir:
         raise ValueError('unspecified data directory')
     all_files = _list_image_files_recursively(data_dir)

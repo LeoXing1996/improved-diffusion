@@ -290,6 +290,8 @@ class GaussianDiffusion:
             return x
 
         if self.model_mean_type == ModelMeanType.PREVIOUS_X:
+            # TODO: when we direct predict x_{t-1}, why we regard this as mean
+            # but not x_{t-1}
             pred_xstart = process_xstart(
                 self._predict_xstart_from_xprev(
                     x_t=x, t=t, xprev=model_output))
@@ -315,6 +317,7 @@ class GaussianDiffusion:
             'variance': model_variance,
             'log_variance': model_log_variance,
             'pred_xstart': pred_xstart,
+            'model_out': model_output
         }
 
     def _predict_xstart_from_eps(self, x_t, t, eps):
@@ -349,6 +352,7 @@ class GaussianDiffusion:
                  t,
                  clip_denoised=True,
                  denoised_fn=None,
+                 noise=None,
                  model_kwargs=None):
         """Sample x_{t-1} from the model at the given timestep.
 
@@ -372,24 +376,31 @@ class GaussianDiffusion:
             denoised_fn=denoised_fn,
             model_kwargs=model_kwargs,
         )
-        noise = th.randn_like(x)
+        noise = th.randn_like(x) if noise is None else noise
         nonzero_mask = ((t != 0).float().view(-1, *([1] * (len(x.shape) - 1)))
                         )  # no noise when t == 0
         sample = out['mean'] + nonzero_mask * th.exp(
             0.5 * out['log_variance']) * noise
-        return {'sample': sample, 'pred_xstart': out['pred_xstart']}
+        return {
+            'sample': sample,
+            'pred_xstart': out['pred_xstart'],
+            'noise': noise,
+            'log_var': out['log_variance'],
+            'mean': out['mean'],
+            'model_out': out['model_out']
+        }
 
-    def p_sample_loop(
-        self,
-        model,
-        shape,
-        noise=None,
-        clip_denoised=True,
-        denoised_fn=None,
-        model_kwargs=None,
-        device=None,
-        progress=False,
-    ):
+    def p_sample_loop(self,
+                      model,
+                      shape,
+                      noise=None,
+                      clip_denoised=True,
+                      denoised_fn=None,
+                      model_kwargs=None,
+                      device=None,
+                      progress=False,
+                      timesteps_noise=None,
+                      save_intermedia=False):
         """Generate samples from the model.
 
         :param model: the model module.
@@ -406,6 +417,8 @@ class GaussianDiffusion:
         :param progress: if True, show a tqdm progress bar.
         :return: a non-differentiable batch of samples.
         """
+        if save_intermedia:
+            intermedia = []
         final = None
         for sample in self.p_sample_loop_progressive(
                 model,
@@ -416,21 +429,24 @@ class GaussianDiffusion:
                 model_kwargs=model_kwargs,
                 device=device,
                 progress=progress,
-        ):
+                timestep_noise=timesteps_noise):
             final = sample
+            if save_intermedia:
+                intermedia.append(final['sample'].clone())
+        if save_intermedia:
+            return intermedia
         return final['sample']
 
-    def p_sample_loop_progressive(
-        self,
-        model,
-        shape,
-        noise=None,
-        clip_denoised=True,
-        denoised_fn=None,
-        model_kwargs=None,
-        device=None,
-        progress=False,
-    ):
+    def p_sample_loop_progressive(self,
+                                  model,
+                                  shape,
+                                  noise=None,
+                                  clip_denoised=True,
+                                  denoised_fn=None,
+                                  model_kwargs=None,
+                                  device=None,
+                                  progress=False,
+                                  timestep_noise=None):
         """Generate samples from the model and yield intermediate samples from
         each timestep of diffusion.
 
@@ -454,6 +470,8 @@ class GaussianDiffusion:
 
         for i in indices:
             t = th.tensor([i] * shape[0], device=device)
+            noise_curr_step = timestep_noise[i] \
+                if timestep_noise is not None else None
             with th.no_grad():
                 out = self.p_sample(
                     model,
@@ -462,7 +480,8 @@ class GaussianDiffusion:
                     clip_denoised=clip_denoised,
                     denoised_fn=denoised_fn,
                     model_kwargs=model_kwargs,
-                )
+                    noise=noise_curr_step)
+                # out['t'] = t
                 yield out
                 img = out['sample']
 

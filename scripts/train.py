@@ -14,7 +14,6 @@ from improved_diffusion.script_util import (create_gaussian_diffusion,
 from improved_diffusion.train_util import TrainLoop
 from mmcv import Config, DictAction
 from mmcv.runner import get_dist_info, init_dist
-from pavi import SummaryWriter
 
 
 def parse_args():
@@ -102,6 +101,8 @@ def main():
         _, world_size = get_dist_info()
         cfg.gpu_ids = range(world_size)
 
+    # reget rank in dirty way
+    rank, _ = get_dist_info()
     # create work_dir
     mmcv.mkdir_or_exist(osp.abspath(cfg.work_dir))
     # dump config
@@ -146,12 +147,23 @@ def main():
     train_cfg_ = copy.deepcopy(cfg.train_cfg)
 
     model = create_model(**model_cfg_)
+
     diffusion = create_gaussian_diffusion(**diffusion_cfg_)
     sampler = create_named_schedule_sampler(
         train_cfg_.get('schedule_sampler', 'uniform'), diffusion)
     train_cfg_['schedule_sampler'] = sampler
     writer_cfg = cfg.writer
-    train_cfg_['mm_writer'] = SummaryWriter(**writer_cfg)
+
+    if rank == 0:
+        try:
+            from pavi import SummaryWriter as Writer
+            writer_cfg = cfg.writer
+        except ModuleNotFoundError:
+            from torch.utils.tensorboard import SummaryWriter as Writer
+            writer_cfg = dict(log_dir=osp.join(cfg.work_dir, 'log'))
+        train_cfg_['mm_writer'] = Writer(**writer_cfg)
+    else:
+        train_cfg_['mm_writer'] = None
     train_cfg_['save_dir'] = osp.join(cfg.work_dir, train_cfg_['save_dir'])
 
     data_cfg_ = copy.deepcopy(cfg.data)
