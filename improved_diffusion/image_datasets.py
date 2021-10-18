@@ -1,3 +1,5 @@
+import os
+import pickle
 import random
 from functools import partial
 
@@ -11,6 +13,7 @@ from mpi4py import MPI
 from PIL import Image
 from torch.utils.data import DataLoader, Dataset
 
+from .data_util import check_integrity, download_and_extract_archive
 from .sample import DistributedSampler
 
 
@@ -158,12 +161,20 @@ def load_data(*,
         yield from loader
 
 
-def build_dataset(data_dir,
-                  image_size,
-                  class_cond=False,
-                  launcher=None,
-                  memcache_args=None,
-                  **kwargs):
+def build_dataset(data_cfg, launcher):
+    if 'dataset_type' in data_cfg:
+        return build_mmcls_dataset(**data_cfg)
+    else:
+        return build_normal_dataset(**data_cfg, launcher=launcher)
+
+
+def build_normal_dataset(data_dir,
+                         image_size,
+                         class_cond=False,
+                         launcher=None,
+                         memcache_args=None,
+                         *args,
+                         **kwargs):
     if not data_dir:
         raise ValueError('unspecified data directory')
     all_files = _list_image_files_recursively(data_dir)
@@ -192,6 +203,14 @@ def build_dataset(data_dir,
     return dataset
 
 
+def build_mmcls_dataset(data_dir, image_size, dataset_type, *args, **kwargs):
+    if dataset_type == 'CIFAR':
+        return CIFAR_ImageDataset(
+            image_size,
+            data_dir,
+        )
+
+
 def _list_image_files_recursively(data_dir):
     results = []
     for entry in sorted(bf.listdir(data_dir)):
@@ -202,6 +221,141 @@ def _list_image_files_recursively(data_dir):
         elif bf.isdir(full_path):
             results.extend(_list_image_files_recursively(full_path))
     return results
+
+
+class CIFAR_ImageDataset(Dataset):
+
+    base_folder = 'cifar-10-batches-py'
+    url = 'https://www.cs.toronto.edu/~kriz/cifar-10-python.tar.gz'
+    filename = 'cifar-10-python.tar.gz'
+    tgz_md5 = 'c58f30108f718f92721af3b95e74349a'
+    train_list = [
+        ['data_batch_1', 'c99cafc152244af753f735de768cd75f'],
+        ['data_batch_2', 'd4bba439e000b95fd0a9bffe97cbabec'],
+        ['data_batch_3', '54ebc095f3ab1f0389bbae665268c751'],
+        ['data_batch_4', '634d18415352ddfa80567beed471001a'],
+        ['data_batch_5', '482c414d41f54cd18b22e5b47cb7c3cb'],
+    ]
+
+    test_list = [
+        ['test_batch', '40351d587109b95175f43aff81a1287e'],
+    ]
+    meta = {
+        'filename': 'batches.meta',
+        'key': 'label_names',
+        'md5': '5ff9c542aee3614f3951f8cda6e48888',
+    }
+
+    def __init__(self, image_size, data_dir, to_bgr=True, need_label=False):
+        super().__init__()
+        self.resolution = image_size
+        self.image_path = data_dir
+        self.need_label = need_label
+        self.to_bgr = to_bgr
+
+        self.load_anno()
+
+    def load_anno(self):
+        if not self._check_integrity():
+            download_and_extract_archive(
+                self.url,
+                self.image_path,
+                filename=self.filename,
+                md5=self.tgz_md5)
+
+        downloaded_list = self.train_list
+
+        self.imgs = []
+        self.gt_labels = []
+
+        # load the picked numpy arrays
+        for file_name, checksum in downloaded_list:
+            file_path = os.path.join(self.image_path, self.base_folder,
+                                     file_name)
+            with open(file_path, 'rb') as f:
+                entry = pickle.load(f, encoding='latin1')
+                self.imgs.append(entry['data'])
+                if 'labels' in entry:
+                    self.gt_labels.extend(entry['labels'])
+                else:
+                    self.gt_labels.extend(entry['fine_labels'])
+
+        self.imgs = np.vstack(self.imgs).reshape(-1, 3, 32, 32)
+        self.imgs = self.imgs.transpose((0, 2, 3, 1))  # convert to HWC
+        if self.to_bgr:
+            self.imgs = self.imgs[..., [2, 1, 0]]
+
+        self._load_meta()
+
+        # data_infos = []
+        # for img, gt_label in zip(self.imgs, self.gt_labels):
+        #     gt_label = np.array(gt_label, dtype=np.int64)
+        #     info = {'img': img, 'gt_label': gt_label}
+        #     data_infos.append(info)
+        # return data_infos
+
+    def _load_meta(self):
+        path = os.path.join(self.image_path, self.base_folder,
+                            self.meta['filename'])
+        if not check_integrity(path, self.meta['md5']):
+            raise RuntimeError(
+                'Dataset metadata file not found or corrupted.' +
+                ' You can use download=True to download it')
+        with open(path, 'rb') as infile:
+            data = pickle.load(infile, encoding='latin1')
+            self.CLASSES = data[self.meta['key']]
+
+    def _check_integrity(self):
+        root = self.image_path
+        for fentry in (self.train_list + self.test_list):
+            filename, md5 = fentry[0], fentry[1]
+            fpath = os.path.join(root, self.base_folder, filename)
+            if not check_integrity(fpath, md5):
+                return False
+        return True
+
+    def __len__(self):
+        return len(self.imgs)
+
+    def __getitem__(self, idx):
+        img = self.imgs[idx]
+        lab = self.gt_labels[idx]
+        # if self.file_client is not None:
+        #     import io
+        #     img_byts = self.file_client.get(path)
+
+        #     buff = io.BytesIO(img_byts)
+        #     pil_image = Image.open(buff)
+        # else:
+        #     with bf.BlobFile(path, 'rb') as f:
+        #         pil_image = Image.open(f)
+        #         pil_image.load()
+
+        # We are not on a new enough PIL to support the `reducing_gap`
+        # argument, which uses BOX downsampling at powers of two first.
+        # Thus, we do it by hand to improve downsample quality.
+        pil_image = Image.fromarray(img.astype(np.uint8))
+        while min(*pil_image.size) >= 2 * self.resolution:
+            pil_image = pil_image.resize(
+                tuple(x // 2 for x in pil_image.size), resample=Image.BOX)
+
+        scale = self.resolution / min(*pil_image.size)
+        pil_image = pil_image.resize(
+            tuple(round(x * scale) for x in pil_image.size),
+            resample=Image.BICUBIC)
+
+        # seems center crop here
+        arr = np.array(pil_image.convert('RGB'))
+        crop_y = (arr.shape[0] - self.resolution) // 2
+        crop_x = (arr.shape[1] - self.resolution) // 2
+        arr = arr[crop_y:crop_y + self.resolution,
+                  crop_x:crop_x + self.resolution]
+        arr = arr.astype(np.float32) / 127.5 - 1
+
+        out_dict = {}
+        if self.need_label:
+            out_dict['y'] = np.array(lab, dtype=np.int64)
+        return np.transpose(arr, [2, 0, 1]), out_dict
 
 
 class ImageDataset(Dataset):

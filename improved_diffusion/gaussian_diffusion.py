@@ -682,7 +682,8 @@ class GaussianDiffusion:
                         x_start,
                         t,
                         model_kwargs=None,
-                        noise=None):
+                        noise=None,
+                        save_pickle=False):
         """Compute training losses for a single timestep.
 
         :param model: the model to evaluate loss on.
@@ -759,6 +760,11 @@ class GaussianDiffusion:
                 terms['loss'] = terms['mse']
         else:
             raise NotImplementedError(self.loss_type)
+
+        if save_pickle:
+            input_dict = dict(
+                x_start=x_start.cpu(), t=t.cpu(), noise=noise.cpu())
+            return terms, input_dict
 
         return terms
 

@@ -55,6 +55,14 @@ def parse_args():
         default='none',
         help='job launcher')
     parser.add_argument('--local_rank', type=int, default=0)
+    parser.add_argument('--save-pickle', action='store_true', default=False)
+    parser.add_argument(
+        '--pickle-name',
+        default='w_and_g',
+        help=(
+            'name of the pickle file to save. The pickle file would be saved '
+            'to \'{work_dir}/{name}.pkl\''))
+    parser.add_argument('--save-iters', type=int, default=10)
     args = parser.parse_args()
     if 'LOCAL_RANK' not in os.environ:
         os.environ['LOCAL_RANK'] = str(args.local_rank)
@@ -172,10 +180,10 @@ def main():
         from improved_diffusion.image_datasets import RepeatDataset
         times = data_cfg_.times
         dataset = RepeatDataset(
-            build_dataset(**data_cfg_.dataset, launcher=args.launcher),
+            build_dataset(data_cfg_.dataset, launcher=args.launcher),
             times=times)
     else:
-        dataset = build_dataset(**data_cfg_, launcher=args.launcher)
+        dataset = build_dataset(data_cfg_, launcher=args.launcher)
 
     dataloader = build_dataloader(
         dataset,
@@ -189,6 +197,10 @@ def main():
 
     train_cfg_['batch_size'] = cfg.data.samples_per_gpu
     train_cfg_['resume_checkpoint'] = args.resume_from
+    train_cfg_['save_pickle'] = args.save_pickle
+    train_cfg_['save_iters'] = args.save_iters
+    train_cfg_['pickle_path'] = osp.join(cfg.work_dir,
+                                         f'{args.pickle_name}.pkl')
     train_looper = TrainLoop(
         model=model, diffusion=diffusion, data=dataloader, **train_cfg_)
     train_looper.run_loop()

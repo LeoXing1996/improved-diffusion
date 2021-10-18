@@ -1,6 +1,8 @@
 import copy
 import functools
 import os
+import pickle
+from copy import deepcopy
 
 import blobfile as bf
 import numpy as np
@@ -44,7 +46,10 @@ class TrainLoop:
                  lr_anneal_steps=0,
                  mm_logger=None,
                  mm_writer=None,
-                 save_dir=None):
+                 save_dir=None,
+                 save_pickle=False,
+                 save_iters=-1,
+                 pickle_path=''):
         self.model = model
         self.diffusion = diffusion
         self.data = iter(data)
@@ -109,6 +114,14 @@ class TrainLoop:
         self.logger = mm_logger if mm_logger is not None else logger
         self.writer = mm_writer
 
+        self.save_pickle = save_pickle
+        self.save_iters = save_iters
+        self.weight_hist = dict()
+        self.grad_hist = dict()
+        self.loss_hist = dict()
+        self.input_hist = dict()
+        self.pickle_path = pickle_path
+
     def _load_and_sync_parameters(self):
         resume_checkpoint = find_resume_checkpoint() or self.resume_checkpoint
 
@@ -169,6 +182,17 @@ class TrainLoop:
                 if os.environ.get('DIFFUSION_TRAINING_TEST', '') \
                         and self.step > 0:
                     return
+
+            if self.save_pickle and (self.step + 1) % self.save_iters == 0:
+                with open(self.pickle_path, 'wb') as file:
+                    pickle.dump(
+                        dict(
+                            w=self.weight_hist,
+                            g=self.grad_hist,
+                            l=self.loss_hist,
+                            inp=self.input_hist), file)
+                return
+
             self.step += 1
         # Save the last checkpoint if it wasn't already saved.
         if (self.step - 1) % self.save_interval != 0:
@@ -184,6 +208,14 @@ class TrainLoop:
 
     def forward_backward(self, batch, cond):
         zero_grad(self.model_params)
+        if self.save_pickle:
+            weight_before_update = dict()
+            for n, v in self.model.state_dict().items():
+                weight_before_update[n] = v.cpu().detach().clone()
+            self.weight_hist[self.step] = weight_before_update
+        # import ipdb
+        # ipdb.set_trace()
+
         for i in range(0, batch.shape[0], self.microbatch):
             micro = batch[i:i + self.microbatch].cuda()
             micro_cond = {
@@ -199,6 +231,7 @@ class TrainLoop:
                 micro,
                 t,
                 model_kwargs=micro_cond,
+                save_pickle=self.save_pickle,
             )
 
             if last_batch or not self.use_ddp:
@@ -206,6 +239,9 @@ class TrainLoop:
             else:
                 with self.ddp_model.no_sync():
                     losses = compute_losses()
+            if self.save_pickle:
+                losses, input_batch = losses
+                self.input_hist[self.step] = deepcopy(input_batch)
 
             if isinstance(self.schedule_sampler, LossAwareSampler):
                 self.schedule_sampler.update_with_local_losses(
@@ -220,6 +256,19 @@ class TrainLoop:
                 (loss * loss_scale).backward()
             else:
                 loss.backward()
+            if self.save_pickle:
+                grad_after_update = dict()
+                for n, p in self.model.named_parameters():
+                    grad_after_update[n] = p.grad.cpu().clone()
+                self.grad_hist[self.step] = grad_after_update
+
+                loss_after_forward = dict()
+                for k, v in losses.items():
+                    # import ipdb
+                    # ipdb.set_trace()
+                    loss_after_forward[k] = (v.detach().clone() *
+                                             weights).cpu()
+                self.loss_hist[self.step] = loss_after_forward
 
     def optimize_fp16(self):
         if any(not th.isfinite(p.grad).all() for p in self.model_params):
