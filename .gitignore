@@ -7,3 +7,7 @@ runs/
 *.vscode
 *.vim
 *.pt
+*.pkl
+
+# for syncthing
+*.stignore
