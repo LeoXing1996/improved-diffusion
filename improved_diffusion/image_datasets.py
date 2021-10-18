@@ -7,7 +7,7 @@ import numpy as np
 import torch
 from mmcv.parallel import collate
 from mmcv.runner import get_dist_info
-from mpi4py import MPI
+# from mpi4py import MPI
 from PIL import Image
 from torch.utils.data import DataLoader, Dataset
 
@@ -136,8 +136,8 @@ def load_data(*,
         image_size,
         all_files,
         classes=classes,
-        shard=MPI.COMM_WORLD.Get_rank(),
-        num_shards=MPI.COMM_WORLD.Get_size(),
+        # shard=MPI.COMM_WORLD.Get_rank(),
+        # num_shards=MPI.COMM_WORLD.Get_size(),
     )
 
     if deterministic:
@@ -186,8 +186,8 @@ def build_dataset(data_dir,
             image_size,
             all_files,
             classes=classes,
-            shard=MPI.COMM_WORLD.Get_rank(),
-            num_shards=MPI.COMM_WORLD.Get_size(),
+            # shard=MPI.COMM_WORLD.Get_rank(),
+            # num_shards=MPI.COMM_WORLD.Get_size(),
         )
     return dataset
 
