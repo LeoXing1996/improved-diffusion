@@ -1,13 +1,13 @@
 """Helpers for distributed training."""
 
 import io
-import os
 import socket
 
 import blobfile as bf
 import torch as th
 import torch.distributed as dist
-from mpi4py import MPI
+
+# from mpi4py import MPI
 
 # Change this to reflect your cluster layout.
 # The GPU for a given rank is (rank % GPUS_PER_NODE).
@@ -15,43 +15,38 @@ GPUS_PER_NODE = 8
 
 SETUP_RETRY_COUNT = 3
 
+# def setup_dist():
+#     """Setup a distributed process group."""
+#     if dist.is_initialized():
+#         return
 
-def setup_dist():
-    """Setup a distributed process group."""
-    if dist.is_initialized():
-        return
+#     comm = MPI.COMM_WORLD
+#     backend = 'gloo' if not th.cuda.is_available() else 'nccl'
 
-    comm = MPI.COMM_WORLD
-    backend = 'gloo' if not th.cuda.is_available() else 'nccl'
+#     if backend == 'gloo':
+#         hostname = 'localhost'
+#     else:
+#         hostname = socket.gethostbyname(socket.getfqdn())
+#     os.environ['MASTER_ADDR'] = comm.bcast(hostname, root=0)
+#     os.environ['RANK'] = str(comm.rank)
+#     os.environ['WORLD_SIZE'] = str(comm.size)
 
-    if backend == 'gloo':
-        hostname = 'localhost'
-    else:
-        hostname = socket.gethostbyname(socket.getfqdn())
-    os.environ['MASTER_ADDR'] = comm.bcast(hostname, root=0)
-    os.environ['RANK'] = str(comm.rank)
-    os.environ['WORLD_SIZE'] = str(comm.size)
-
-    port = comm.bcast(_find_free_port(), root=0)
-    os.environ['MASTER_PORT'] = str(port)
-    dist.init_process_group(backend=backend, init_method='env://')
+#     port = comm.bcast(_find_free_port(), root=0)
+#     os.environ['MASTER_PORT'] = str(port)
+#     dist.init_process_group(backend=backend, init_method='env://')
 
 
 def dev():
     """Get the device to use for torch.distributed."""
     if th.cuda.is_available():
-        return th.device(f'cuda:{MPI.COMM_WORLD.Get_rank() % GPUS_PER_NODE}')
+        return th.cuda.current_device()
     return th.device('cpu')
 
 
 def load_state_dict(path, **kwargs):
     """Load a PyTorch file without redundant fetches across MPI ranks."""
-    if MPI.COMM_WORLD.Get_rank() == 0 or th.cuda.current_device() == 0:
-        with bf.BlobFile(path, 'rb') as f:
-            data = f.read()
-    else:
-        data = None
-    data = MPI.COMM_WORLD.bcast(data)
+    with bf.BlobFile(path, 'rb') as f:
+        data = f.read()
     return th.load(io.BytesIO(data), **kwargs)
 
 
