@@ -2,6 +2,7 @@ import copy
 import functools
 import os
 import pickle
+import random
 from copy import deepcopy
 
 import blobfile as bf
@@ -48,7 +49,7 @@ class TrainLoop:
                  mm_writer=None,
                  save_dir=None,
                  save_pickle=False,
-                 save_iters=-1,
+                 pickle_save_iters=-1,
                  pickle_path=''):
         self.model = model
         self.diffusion = diffusion
@@ -115,7 +116,7 @@ class TrainLoop:
         self.writer = mm_writer
 
         self.save_pickle = save_pickle
-        self.save_iters = save_iters
+        self.pickle_save_iters = pickle_save_iters
         self.weight_hist = dict()
         self.grad_hist = dict()
         self.loss_hist = dict()
@@ -176,14 +177,8 @@ class TrainLoop:
             self.run_step(batch, cond)
             if self.step % self.log_interval == 0:
                 logger.dumpkvs()
-            if self.step % self.save_interval == 0:
-                self.save()
-                # Run for a finite amount of time in integration tests.
-                if os.environ.get('DIFFUSION_TRAINING_TEST', '') \
-                        and self.step > 0:
-                    return
-
-            if self.save_pickle and (self.step + 1) % self.save_iters == 0:
+            if self.save_pickle and (self.step +
+                                     1) % self.pickle_save_iters == 0:
                 with open(self.pickle_path, 'wb') as file:
                     pickle.dump(
                         dict(
@@ -213,8 +208,6 @@ class TrainLoop:
             for n, v in self.model.state_dict().items():
                 weight_before_update[n] = v.cpu().detach().clone()
             self.weight_hist[self.step] = weight_before_update
-        # import ipdb
-        # ipdb.set_trace()
 
         for i in range(0, batch.shape[0], self.microbatch):
             micro = batch[i:i + self.microbatch].cuda()
@@ -224,6 +217,9 @@ class TrainLoop:
             }
             last_batch = (i + self.microbatch) >= batch.shape[0]
             t, weights = self.schedule_sampler.sample(micro.shape[0])
+
+            # hard code here --> test loss at t = 0
+            t[random.randint(0, t.shape[0]) - 1] = 0
 
             compute_losses = functools.partial(
                 self.diffusion.training_losses,
@@ -264,8 +260,6 @@ class TrainLoop:
 
                 loss_after_forward = dict()
                 for k, v in losses.items():
-                    # import ipdb
-                    # ipdb.set_trace()
                     loss_after_forward[k] = (v.detach().clone() *
                                              weights).cpu()
                 self.loss_hist[self.step] = loss_after_forward

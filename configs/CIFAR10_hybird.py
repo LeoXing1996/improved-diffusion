@@ -10,7 +10,7 @@ memcache_args = dict(
 data = dict(
     type='RepeatDataset',
     times=1000,
-    samples_per_gpu=32,
+    samples_per_gpu=8,
     workers_per_gpu=4,
     dataset=dict(
         data_dir='./data/cifar_train',
@@ -25,7 +25,7 @@ model_and_diffusion = dict(
         image_size=32,
         num_channels=128,
         num_res_blocks=3,
-        dropout=0.3,
+        dropout=0,
     ),
     diffusion=dict(steps=4000, noise_schedule='cosine'))
 

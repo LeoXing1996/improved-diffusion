@@ -12,6 +12,7 @@ from improved_diffusion.resample import create_named_schedule_sampler
 from improved_diffusion.script_util import (create_gaussian_diffusion,
                                             create_model)
 from improved_diffusion.train_util import TrainLoop
+from improved_diffusion.unet_mmgen import get_mmgen_denoising
 from mmcv import Config, DictAction
 from mmcv.runner import get_dist_info, init_dist
 
@@ -62,7 +63,8 @@ def parse_args():
         help=(
             'name of the pickle file to save. The pickle file would be saved '
             'to \'{work_dir}/{name}.pkl\''))
-    parser.add_argument('--save-iters', type=int, default=10)
+    parser.add_argument('--model-style', default='official')
+    parser.add_argument('--pickle-save-iters', type=int, default=10)
     args = parser.parse_args()
     if 'LOCAL_RANK' not in os.environ:
         os.environ['LOCAL_RANK'] = str(args.local_rank)
@@ -154,7 +156,10 @@ def main():
     assert 'train_cfg' in cfg
     train_cfg_ = copy.deepcopy(cfg.train_cfg)
 
-    model = create_model(**model_cfg_)
+    if args.model_style == 'official':
+        model = create_model(**model_cfg_)
+    elif args.model_style == 'mmgen':
+        model = get_mmgen_denoising()
 
     diffusion = create_gaussian_diffusion(**diffusion_cfg_)
     sampler = create_named_schedule_sampler(
@@ -198,7 +203,7 @@ def main():
     train_cfg_['batch_size'] = cfg.data.samples_per_gpu
     train_cfg_['resume_checkpoint'] = args.resume_from
     train_cfg_['save_pickle'] = args.save_pickle
-    train_cfg_['save_iters'] = args.save_iters
+    train_cfg_['pickle_save_iters'] = args.pickle_save_iters
     train_cfg_['pickle_path'] = osp.join(cfg.work_dir,
                                          f'{args.pickle_name}.pkl')
     train_looper = TrainLoop(
