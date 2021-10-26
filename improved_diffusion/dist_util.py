@@ -39,7 +39,7 @@ SETUP_RETRY_COUNT = 3
 def dev():
     """Get the device to use for torch.distributed."""
     if th.cuda.is_available():
-        return th.cuda.current_device()
+        return f'cuda:{th.cuda.current_device()}'
     return th.device('cpu')
 
 

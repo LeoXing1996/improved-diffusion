@@ -73,7 +73,7 @@ class TrainLoop:
 
         self.save_dir = save_dir if save_dir is not None else get_blob_logdir()
 
-        # self._load_and_sync_parameters()
+        self._load_and_sync_parameters()
         if self.use_fp16:
             self._setup_fp16()
 
