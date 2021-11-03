@@ -129,7 +129,6 @@ def main():
 def create_argparser():
     defaults = dict(
         clip_denoised=True,
-        num_samples=10000,
         batch_size=16,
         use_ddim=False,
     )
@@ -138,6 +137,7 @@ def create_argparser():
     parser.add_argument('ckpt', type=str)
     parser.add_argument('--class_cond', default=None)
     parser.add_argument('--work-dir', type=str, default='work_dirs')
+    parser.add_argument('--num-sampls', type=int, default=10000)
     parser.add_argument(
         '--launcher',
         choices=['none', 'pytorch', 'slurm', 'mpi'],
