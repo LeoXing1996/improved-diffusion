@@ -1,11 +1,11 @@
 # Copyright (c) OpenMMLab. All rights reserved.
 import sys
 
+# yapf: enable
 from mmgen.models.builder import build_module  # noqa
 
 # yapf: disable
 sys.path.append('/space0/home/xingzn/mmgen_dev/DDPM')  # isort:skip  # noqa
-# yapf: enable
 
 
 def get_mmgen_denoising():

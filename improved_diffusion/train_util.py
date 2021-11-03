@@ -179,6 +179,7 @@ class TrainLoop:
                 logger.dumpkvs()
             if self.save_pickle and (self.step +
                                      1) % self.pickle_save_iters == 0:
+                print('Start saving pickle. Please wait...')
                 with open(self.pickle_path, 'wb') as file:
                     pickle.dump(
                         dict(
