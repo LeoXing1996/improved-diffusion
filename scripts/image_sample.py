@@ -33,7 +33,7 @@ def main():
         distributed = True
         init_dist(args.launcher, backend='nccl')
         # re-set gpu_ids with distributed training mode
-        _, world_size = get_dist_info()
+    rank, world_size = get_dist_info()
 
     logger.configure()
 
@@ -70,6 +70,9 @@ def main():
     logger.log('sampling...')
     all_images = []
     all_labels = []
+    # if rank == 0:
+    #     pbar = mmcv.ProgressBar(args.num_samples)
+
     while len(all_images) * args.batch_size < args.num_samples:
         model_kwargs = {}
         if args.class_cond:
@@ -106,7 +109,8 @@ def main():
             dist.all_gather(gathered_labels, classes)
             all_labels.extend(
                 [labels.cpu().numpy() for labels in gathered_labels])
-        logger.log(f'created {len(all_images) * args.batch_size} samples')
+        if rank == 0:
+            logger.log(f'created {len(all_images) * args.batch_size} samples')
 
     arr = np.concatenate(all_images, axis=0)
     arr = arr[:args.num_samples]
