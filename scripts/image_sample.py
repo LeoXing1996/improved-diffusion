@@ -56,6 +56,7 @@ def main():
         train_cfg_.get('schedule_sampler', 'uniform'), diffusion)
     train_cfg_['schedule_sampler'] = sampler
 
+    model.load_state_dict(th.load(args.ckpt, map_location='cpu'))
     if distributed:
         model = DistributedDataParallel(
             model.cuda(),
@@ -70,8 +71,6 @@ def main():
     logger.log('sampling...')
     all_images = []
     all_labels = []
-    # if rank == 0:
-    #     pbar = mmcv.ProgressBar(args.num_samples)
 
     while len(all_images) * args.batch_size < args.num_samples:
         model_kwargs = {}
