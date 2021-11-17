@@ -46,7 +46,7 @@ class TrainLoop:
                  mm_logger=None,
                  mm_writer=None,
                  save_dir=None,
-                 max_iteration=-1):
+                 max_iterations=-1):
         self.model = model
         self.diffusion = diffusion
         self.data = iter(data)
@@ -66,7 +66,7 @@ class TrainLoop:
 
         self.step = 0
         self.resume_step = 0
-        self.max_iterations = max_iteration
+        self.max_iterations = max_iterations
         self.global_batch = self.batch_size * dist.get_world_size()
 
         self.model_params = list(self.model.parameters())
