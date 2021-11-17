@@ -162,7 +162,7 @@ def build_dataset(data_dir,
                   image_size,
                   class_cond=False,
                   launcher=None,
-                  memcache_args=None,
+                  file_client_args=None,
                   **kwargs):
     if not data_dir:
         raise ValueError('unspecified data directory')
@@ -180,7 +180,7 @@ def build_dataset(data_dir,
             image_size,
             all_files,
             classes=classes,
-            memcache_args=memcache_args)
+            file_client_args=file_client_args)
     else:
         dataset = ImageDataset(
             image_size,
@@ -212,7 +212,7 @@ class ImageDataset(Dataset):
                  classes=None,
                  shard=0,
                  num_shards=1,
-                 memcache_args=None):
+                 file_client_args=None):
         super().__init__()
         self.resolution = resolution
         self.local_images = image_paths[shard:][::num_shards]
@@ -220,8 +220,8 @@ class ImageDataset(Dataset):
             shard:][::num_shards]
 
         # support repeat and memcache loading fashion and disable mpi
-        if memcache_args is not None:
-            self.file_client = mmcv.FileClient(**memcache_args)
+        if file_client_args is not None:
+            self.file_client = mmcv.FileClient(**file_client_args)
         else:
             self.file_client = None
 
