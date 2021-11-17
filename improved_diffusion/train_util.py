@@ -125,7 +125,7 @@ class TrainLoop:
                     dist_util.load_state_dict(
                         resume_checkpoint, map_location=dist_util.dev()))
 
-        self.model.cuda()
+        # self.model.cuda()
         # dist_util.sync_params(self.model.parameters())
 
     def _load_ema_parameters(self, rate):
