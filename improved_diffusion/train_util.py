@@ -1,6 +1,7 @@
 import copy
 import functools
 import os
+import time
 
 import blobfile as bf
 import numpy as np
@@ -159,6 +160,7 @@ class TrainLoop:
         self.model.convert_to_fp16()
 
     def run_loop(self):
+        rank = dist.get_rank()
         while (not self.lr_anneal_steps
                or self.step + self.resume_step < self.lr_anneal_steps):
 
@@ -166,10 +168,25 @@ class TrainLoop:
             if self.max_iteration > 0 and self.step == self.max_iteration:
                 break
 
+            start_time = time.time()
             batch, cond = next(self.data)
+            data_end_time = time.time()
             self.run_step(batch, cond)
+            train_end_time = time.time()
+
+            data_time = data_end_time
+            iter_time = train_end_time - start_time
+            if self.max_iterations:
+                eta = (self.max_iterations - self.step) * iter_time
+            else:
+                eta = -1
+
             if self.step % self.log_interval == 0:
                 logger.dumpkvs()
+                if rank == 0:
+                    print(f'data_time: {data_time}, time: {iter_time}, '
+                          f'eta: {eta}')
+
             if self.step % self.save_interval == 0:
                 self.save()
                 # Run for a finite amount of time in integration tests.
