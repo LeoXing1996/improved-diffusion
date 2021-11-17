@@ -1,3 +1,5 @@
+# L_hybird + 500k iter
+
 _base_ = ['base.py']
 
 memcache_args = dict(
@@ -29,6 +31,7 @@ model_and_diffusion = dict(
     ),
     diffusion=dict(steps=4000, noise_schedule='cosine'))
 
-train_cfg = dict(lr=1e-4, batch_size=128, save_dir='ckpt')
+train_cfg = dict(
+    lr=1e-4, batch_size=128, save_dir='ckpt', max_iterations=500000)
 
-writer = dict(project='Improve-DDPM-CIFAR10', name='L_hybird')
+writer = dict(project='Improve-DDPM', name='CIFAR10-L_hybird-Official')

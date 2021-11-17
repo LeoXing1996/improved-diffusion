@@ -44,7 +44,8 @@ class TrainLoop:
                  lr_anneal_steps=0,
                  mm_logger=None,
                  mm_writer=None,
-                 save_dir=None):
+                 save_dir=None,
+                 max_iteration=-1):
         self.model = model
         self.diffusion = diffusion
         self.data = iter(data)
@@ -64,6 +65,7 @@ class TrainLoop:
 
         self.step = 0
         self.resume_step = 0
+        self.max_iterations = max_iteration
         self.global_batch = self.batch_size * dist.get_world_size()
 
         self.model_params = list(self.model.parameters())
@@ -159,6 +161,11 @@ class TrainLoop:
     def run_loop(self):
         while (not self.lr_anneal_steps
                or self.step + self.resume_step < self.lr_anneal_steps):
+
+            # quite loop if arrive max iteration
+            if self.max_iteration > 0 and self.step == self.max_iteration:
+                break
+
             batch, cond = next(self.data)
             self.run_step(batch, cond)
             if self.step % self.log_interval == 0:
