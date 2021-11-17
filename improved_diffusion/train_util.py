@@ -174,18 +174,22 @@ class TrainLoop:
             self.run_step(batch, cond)
             train_end_time = time.time()
 
-            data_time = data_end_time
+            data_time = data_end_time - start_time
             iter_time = train_end_time - start_time
             if self.max_iterations:
                 eta = (self.max_iterations - self.step) * iter_time
+                day = (eta / 3600) // 24
+                hour = int((eta / 3600) % 24)
+                eta = f'{day} day-{hour} hour'
             else:
                 eta = -1
 
             if self.step % self.log_interval == 0:
                 logger.dumpkvs()
                 if rank == 0:
-                    print(f'data_time: {data_time}, time: {iter_time}, '
-                          f'eta: {eta}')
+                    print(
+                        f'data_time: {data_time:.2f}, time: {iter_time:.2f}, '
+                        f'eta: {eta}')
 
             if self.step % self.save_interval == 0:
                 self.save()
