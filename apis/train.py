@@ -15,7 +15,7 @@ from mmcv.utils import get_build_config, get_logger
 def set_random_seed(seed, deterministic=False, use_rank_shift=True):
     """Set random seed.
 
-    In this function, we just modify the default behavior of the simliar
+    In this function, we just modify the default behavior of the similar
     function defined in MMCV.
 
     Args:
@@ -66,7 +66,12 @@ def collect_env():
     env_info['CUDA available'] = cuda_available
 
     if cuda_available:
-        from mmcv.utils.parrots_wrapper import CUDA_HOME
+        if mmcv.__version__ < '1.3.11':
+            from mmcv.utils.parrots_wrapper import CUDA_HOME
+        else:
+            from mmcv.utils.parrots_wrapper import _get_cuda_home
+            CUDA_HOME = _get_cuda_home()
+
         env_info['CUDA_HOME'] = CUDA_HOME
 
         if CUDA_HOME is not None and osp.isdir(CUDA_HOME):
