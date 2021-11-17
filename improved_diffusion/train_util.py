@@ -165,7 +165,7 @@ class TrainLoop:
                or self.step + self.resume_step < self.lr_anneal_steps):
 
             # quite loop if arrive max iteration
-            if self.max_iteration > 0 and self.step == self.max_iteration:
+            if self.max_iterations > 0 and self.step == self.max_iterations:
                 break
 
             start_time = time.time()
