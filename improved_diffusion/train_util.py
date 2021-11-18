@@ -187,9 +187,9 @@ class TrainLoop:
             if self.step % self.log_interval == 0:
                 logger.dumpkvs()
                 if rank == 0:
-                    print(
-                        f'data_time: {data_time:.2f}, time: {iter_time:.2f}, '
-                        f'eta: {eta}')
+                    print(f'data_time: {data_time:.2f}, '
+                          f'time: {iter_time:.2f}, '
+                          f'eta: {eta}')
 
             if self.step % self.save_interval == 0:
                 self.save()
