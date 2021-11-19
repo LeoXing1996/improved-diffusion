@@ -13,13 +13,9 @@ file_client_args = dict(
 
 # bz = 16 * 8 = 128
 data = dict(
-    type='RepeatDataset',
-    times=1000,
-    dataset=dict(
-        data_dir='./data/imagenet',
-        image_size=64,
-        file_client_args=file_client_args,
-    ),
+    data_dir='./data/imagenet',
+    image_size=64,
+    file_client_args=file_client_args,
     samples_per_gpu=16,
     workers_per_gpu=5,
     persistent_workers=True,
@@ -40,4 +36,4 @@ model_and_diffusion = dict(
 # train for 1500k
 train_cfg = dict(lr=1e-4, save_dir='ckpt', max_iterations=1500000)
 
-writer = dict(project='Improve-DDPM', name='ImageNet-64-ClassCond')
+writer = dict(project='Improve-DDPM', name='ImageNet-64-noCond')

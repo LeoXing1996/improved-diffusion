@@ -49,7 +49,8 @@ class TrainLoop:
                  max_iterations=-1):
         self.model = model
         self.diffusion = diffusion
-        self.data = iter(data)
+        # self.data = iter(data)
+        self.dataloader = data
         self.batch_size = batch_size
         self.microbatch = microbatch if microbatch > 0 else batch_size
         self.lr = lr
@@ -161,15 +162,20 @@ class TrainLoop:
 
     def run_loop(self):
         rank = dist.get_rank()
-        while (not self.lr_anneal_steps
-               or self.step + self.resume_step < self.lr_anneal_steps):
+        for data in self.dataloader:
+            # while (not self.lr_anneal_steps
+            #        or self.step + self.resume_step < self.lr_anneal_steps):
 
             # quite loop if arrive max iteration
             if self.max_iterations > 0 and self.step == self.max_iterations:
                 break
+            if self.lr_anneal_steps and (self.step + self.resume_step >=
+                                         self.lr_anneal_steps):
+                break
 
             start_time = time.time()
-            batch, cond = next(self.data)
+            batch, cond = data
+            # batch, cond = next(self.data)
             data_end_time = time.time()
             self.run_step(batch, cond)
             train_end_time = time.time()
