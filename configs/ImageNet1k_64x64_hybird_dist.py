@@ -13,9 +13,13 @@ file_client_args = dict(
 
 # bz = 16 * 8 = 128
 data = dict(
-    data_dir='./data/imagenet',
-    image_size=64,
-    file_client_args=file_client_args,
+    type='RepeatDataset',
+    times=1000,
+    dataset=dict(
+        data_dir='./data/imagenet',
+        image_size=64,
+        file_client_args=file_client_args,
+    ),
     samples_per_gpu=16,
     workers_per_gpu=5,
     persistent_workers=True,

@@ -107,7 +107,9 @@ def load_data(*,
               image_size,
               class_cond=False,
               deterministic=False):
-    """For a dataset, create a generator over (images, kwargs) pairs.
+    """To be noted that, this function is not used by our code.
+
+    For a dataset, create a generator over (images, kwargs) pairs.
 
     Each images is an NCHW float tensor, and the kwargs dict contains zero or
     more keys, each of which map to a batched Tensor of their own.
